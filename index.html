@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TerraLoop — Walk to Own the World</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+  <!-- Full-screen map -->
+  <div id="map"></div>
+
+  <!-- Red bar disappears once map tiles load -->
+  <div id="dbg">⏳ Loading map… (needs internet + localhost, not file://)</div>
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <div id="logo">Terra<span>Loop</span></div>
+    <div id="terr-count"></div>
+
+    <button id="squad-btn"  onclick="toggleSquad()">Solo mode</button>
+    <button id="start-btn"  onclick="startDraw()">Start Loop</button>
+    <button id="close-btn"  onclick="closeLoop()" class="hidden" disabled>Close Loop</button>
+    <button id="cancel-btn" onclick="cancelDraw()" class="hidden">Cancel</button>
+    <div    id="hint"       class="hidden"></div>
+  </div>
+
+  <!-- Territory card (slides in from right) -->
+  <div id="card" class="hidden"></div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="hidden">
+    <div class="spin"></div>
+    <div id="load-txt">Claude is naming your territory…</div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" role="status"></div>
+
+
+  <!-- Leaflet JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+  <!-- App — order matters -->
+  <script src="config.js"></script>   <!-- 1. constants + API key  -->
+  <script src="js/game.js"></script>  <!-- 2. territory logic       -->
+  <script src="js/claude.js"></script><!-- 3. Claude API call        -->
+  <script src="js/ui.js"></script>    <!-- 4. cards / toasts / DOM  -->
+  <script src="js/map.js"></script>   <!-- 5. Leaflet + glue (boot) -->
+
+</body>
+</html>

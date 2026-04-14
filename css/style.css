@@ -1,0 +1,221 @@
+/* ============================================================
+   style.css — TerraLoop
+   ============================================================ */
+
+/* ── Reset: html + body MUST be 100% height ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0f1117;
+  color: #e8e6df;
+}
+
+/* ── Map fills entire screen ── */
+#map {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  background: #1a1d26;
+}
+
+/* ── Debug bar ── */
+#dbg {
+  position: fixed;
+  top: 56px; left: 0; right: 0;
+  z-index: 999;
+  background: #711B13;
+  color: #F0997B;
+  font-size: 12px;
+  padding: 6px 14px;
+  text-align: center;
+}
+#dbg.gone { display: none; }
+
+/* ── Top bar ── */
+#topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: rgba(15, 17, 23, 0.93);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+#logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+
+#logo span { color: #1D9E75; }
+
+#terr-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-right: auto;
+}
+
+/* ── Buttons ── */
+button {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+  color: #e8e6df;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+button:hover    { background: rgba(255, 255, 255, 0.14); }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+#start-btn               { background: #378ADD; border-color: #378ADD; color: #fff; }
+#start-btn:hover         { background: #2a6ab8; }
+#cancel-btn              { background: rgba(226,75,74,.15); border-color: rgba(226,75,74,.4); color: #f09595; }
+#squad-btn.squad-on      { border-color: #1D9E75; background: rgba(29,158,117,.14); color: #9FE1CB; }
+
+/* ── Draw hint ── */
+#hint {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: #EF9F27;
+  background: rgba(239, 159, 39, 0.10);
+  border: 1px solid rgba(239, 159, 39, 0.3);
+}
+
+.hidden { display: none !important; }
+
+/* ── Territory side card ── */
+#card {
+  position: fixed;
+  top: 70px;
+  right: 16px;
+  z-index: 600;
+  width: 295px;
+  background: rgba(12, 14, 22, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 14px;
+  padding: 20px;
+  transform: translateX(320px);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#card.open { transform: translateX(0); }
+
+.c-type   { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 4px; }
+.c-name   { font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; }
+.c-spot   { font-size: 12px; color: rgba(255,255,255,.35); margin-top: 3px; }
+.c-lore   { font-size: 13px; color: rgba(255,255,255,.6); font-style: italic; line-height: 1.65; margin: 12px 0; padding: 9px 12px; background: rgba(255,255,255,.04); border-radius: 8px; }
+.c-energy { display: flex; align-items: center; gap: 7px; font-size: 12px; color: rgba(255,255,255,.4); margin-bottom: 12px; }
+.c-dot    { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+.c-str-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.c-str-lbl { font-size: 11px; color: rgba(255,255,255,.4); width: 52px; }
+.str-bg    { flex: 1; height: 5px; background: rgba(255,255,255,.1); border-radius: 3px; overflow: hidden; }
+.str-fill  { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+.c-str-n   { font-size: 13px; font-weight: 700; color: #fff; width: 22px; text-align: right; }
+
+.c-area   { font-size: 11px; color: rgba(255,255,255,.28); margin-bottom: 12px; }
+.c-reward { font-size: 12px; font-weight: 500; color: #EF9F27; background: rgba(239,159,39,.08); border: 1px solid rgba(239,159,39,.22); border-radius: 6px; padding: 7px 10px; margin-bottom: 12px; }
+.c-close  { width: 100%; padding: 8px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: rgba(255,255,255,.4); font-size: 13px; cursor: pointer; }
+.c-close:hover { background: rgba(255,255,255,.12); }
+
+/* ── Map territory label ── */
+.tlabel {
+  background: rgba(10, 12, 20, 0.88);
+  border: 1.5px solid;
+  border-radius: 6px;
+  padding: 3px 8px;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.tl-n { font-size: 11px; font-weight: 700; color: #fff; }
+.tl-s { font-size: 10px; font-weight: 600; }
+
+/* ── Loading overlay ── */
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  background: rgba(8, 10, 16, 0.78);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.spin {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,.1);
+  border-top-color: #378ADD;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#load-txt { font-size: 14px; color: rgba(255,255,255,.55); }
+
+/* ── Toast ── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(70px);
+  z-index: 700;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  max-width: calc(100vw - 40px);
+  transition: transform 0.3s, opacity 0.3s;
+  opacity: 0;
+}
+#toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+.t-info  { background: #185FA5; color: #B5D4F4; }
+.t-ok    { background: #0F6E56; color: #9FE1CB; }
+.t-warn  { background: #633806; color: #FAC775; }
+.t-fight { background: #711B13; color: #F0997B; }
+.t-err   { background: #791F1F; color: #F7C1C1; }
+
+/* ── Leaflet overrides ── */
+.leaflet-control-zoom a {
+  background: rgba(14,16,24,.92) !important;
+  color: #e8e6df !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(0,0,0,.5) !important;
+  color: rgba(255,255,255,.4) !important;
+  font-size: 10px !important;
+}
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  #card { width: calc(100vw - 32px); }
+  button { padding: 6px 10px; font-size: 12px; }
+}

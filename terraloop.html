@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TerraLoop</title>
+
+<!-- Leaflet from cdnjs (more reliable than unpkg) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+
+<style>
+html, body {
+  width: 100%; height: 100%;
+  margin: 0; padding: 0;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0f1117;
+  color: #e8e6df;
+}
+/* ── Map fills the whole screen ── */
+#map {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  z-index: 1;
+  background: #1a1d26;
+}
+/* ── Top bar ── */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 500;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 16px;
+  background: rgba(15,17,23,0.93);
+  border-bottom: 1px solid rgba(255,255,255,0.09);
+}
+#logo { font-size: 18px; font-weight: 700; color: #fff; }
+#logo span { color: #1D9E75; }
+#terr-count { font-size: 11px; color: rgba(255,255,255,0.35); margin-right: auto; }
+
+/* Buttons */
+button {
+  padding: 7px 14px; border-radius: 8px; font-size: 13px;
+  font-weight: 500; cursor: pointer; border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07); color: #e8e6df;
+  transition: background .15s; white-space: nowrap;
+}
+button:hover { background: rgba(255,255,255,0.14); }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+#start-btn  { background: #378ADD; border-color: #378ADD; color: #fff; }
+#start-btn:hover { background: #2a6ab8; }
+#cancel-btn { background: rgba(226,75,74,.15); border-color: rgba(226,75,74,.4); color: #f09595; }
+#squad-btn.on { border-color: #1D9E75; background: rgba(29,158,117,.14); color: #9FE1CB; }
+
+/* Draw hint */
+#hint {
+  font-size: 12px; padding: 5px 10px; border-radius: 6px;
+  color: #EF9F27; background: rgba(239,159,39,.1);
+  border: 1px solid rgba(239,159,39,.3);
+}
+
+.hidden { display: none !important; }
+
+/* ── Side card ── */
+#card {
+  position: fixed; top: 70px; right: 16px; z-index: 600;
+  width: 295px;
+  background: rgba(12,14,22,0.97);
+  border: 1px solid rgba(255,255,255,0.11);
+  border-radius: 14px; padding: 20px;
+  transform: translateX(320px);
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+}
+#card.open { transform: translateX(0); }
+.c-type { font-size: 11px; font-weight: 700; letter-spacing:.07em; text-transform:uppercase; margin-bottom:4px; }
+.c-name { font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; }
+.c-spot { font-size: 12px; color: rgba(255,255,255,.35); margin-top: 3px; }
+.c-lore {
+  font-size: 13px; color: rgba(255,255,255,.6); font-style: italic;
+  line-height: 1.65; margin: 12px 0;
+  padding: 9px 12px; background: rgba(255,255,255,.04); border-radius: 8px;
+}
+.c-energy { display:flex; align-items:center; gap:7px; font-size:12px; color:rgba(255,255,255,.4); margin-bottom:12px; }
+.c-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.c-str-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.c-str-lbl { font-size:11px; color:rgba(255,255,255,.4); width:52px; }
+.str-bg { flex:1; height:5px; background:rgba(255,255,255,.1); border-radius:3px; overflow:hidden; }
+.str-fill { height:100%; border-radius:3px; }
+.c-str-n { font-size:13px; font-weight:700; color:#fff; width:22px; text-align:right; }
+.c-area { font-size:11px; color:rgba(255,255,255,.28); margin-bottom:12px; }
+.c-reward {
+  font-size:12px; font-weight:500; color:#EF9F27;
+  background:rgba(239,159,39,.08); border:1px solid rgba(239,159,39,.22);
+  border-radius:6px; padding:7px 10px; margin-bottom:12px;
+}
+.c-close {
+  width:100%; padding:8px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
+  border-radius:8px; color:rgba(255,255,255,.4); font-size:13px; cursor:pointer;
+}
+.c-close:hover { background:rgba(255,255,255,.12); }
+
+/* Territory label on map */
+.tlabel {
+  background: rgba(10,12,20,.88); border:1.5px solid;
+  border-radius:6px; padding:3px 8px; text-align:center;
+  pointer-events:none; white-space:nowrap;
+}
+.tl-n { font-size:11px; font-weight:700; color:#fff; }
+.tl-s { font-size:10px; font-weight:600; }
+
+/* Loading */
+#loading {
+  position:fixed; inset:0; z-index:800;
+  background:rgba(8,10,16,.78);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:16px;
+}
+.spin {
+  width:38px; height:38px; border-radius:50%;
+  border:3px solid rgba(255,255,255,.1); border-top-color:#378ADD;
+  animation:spin .75s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+#load-txt { font-size:14px; color:rgba(255,255,255,.55); }
+
+/* Toast */
+#toast {
+  position:fixed; bottom:24px; left:50%;
+  transform:translateX(-50%) translateY(70px);
+  z-index:700; padding:10px 20px; border-radius:10px;
+  font-size:13px; font-weight:500; text-align:center;
+  max-width:calc(100vw - 40px);
+  transition:transform .3s, opacity .3s; opacity:0;
+}
+#toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+.t-info     { background:#185FA5; color:#B5D4F4; }
+.t-ok       { background:#0F6E56; color:#9FE1CB; }
+.t-warn     { background:#633806; color:#FAC775; }
+.t-fight    { background:#711B13; color:#F0997B; }
+.t-err      { background:#791F1F; color:#F7C1C1; }
+
+/* Leaflet tweaks */
+.leaflet-control-zoom a {
+  background:rgba(14,16,24,.92)!important;
+  color:#e8e6df!important; border-color:rgba(255,255,255,.12)!important;
+}
+.leaflet-control-attribution {
+  background:rgba(0,0,0,.5)!important; color:rgba(255,255,255,.4)!important; font-size:10px!important;
+}
+
+/* debug bar — hidden after map loads */
+#dbg {
+  position:fixed; top:56px; left:0; right:0; z-index:999;
+  background:#711B13; color:#F0997B; font-size:12px;
+  padding:6px 14px; text-align:center;
+}
+
+@media(max-width:600px){
+  #card { width:calc(100vw - 32px); }
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- debug bar shown until map loads -->
+<div id="dbg">Loading map… if this stays red, check your internet connection.</div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div id="logo">Terra<span>Loop</span></div>
+  <div id="terr-count"></div>
+  <button id="squad-btn"   onclick="toggleSquad()">Solo mode</button>
+  <button id="start-btn"   onclick="startDraw()">Start Loop</button>
+  <button id="close-btn"   onclick="closeLoop()" class="hidden" disabled>Close Loop</button>
+  <button id="cancel-btn"  onclick="cancelDraw()" class="hidden">Cancel</button>
+  <div    id="hint"        class="hidden"></div>
+</div>
+
+<!-- Side card -->
+<div id="card" class="hidden"></div>
+
+<!-- Loading -->
+<div id="loading" class="hidden">
+  <div class="spin"></div>
+  <div id="load-txt">Claude is naming your territory…</div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Leaflet JS from cdnjs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  STEP 1 ─ Paste your key from console.anthropic.com
+// ══════════════════════════════════════════════════════
+const API_KEY = "YOUR_KEY_HERE";
+
+// ── Config ────────────────────────────────────────────
+const C = {
+  model   : "claude-sonnet-4-6",
+  center  : [43.0762, -89.4009],   // Memorial Union, UW-Madison
+  zoom    : 16,
+  minPts  : 3,
+  soloMul : 1.0,
+  squadMul: 2.2,
+  cSolo   : "#378ADD",
+  cSquad  : "#1D9E75",
+  cDraw   : "#EF9F27",
+  cOver   : "#E24B4A",
+  fillOp  : 0.20,
+  landmarks: [
+    {name:"Memorial Union",       lat:43.0762,lng:-89.4009},
+    {name:"Engineering Hall",     lat:43.0722,lng:-89.4106},
+    {name:"Memorial Library",     lat:43.0757,lng:-89.4038},
+    {name:"Bascom Hall",          lat:43.0760,lng:-89.4066},
+    {name:"Camp Randall Stadium", lat:43.0696,lng:-89.4122},
+    {name:"Union South",          lat:43.0714,lng:-89.4074},
+    {name:"Chazen Museum",        lat:43.0742,lng:-89.4028},
+  ]
+};
+
+// ── State ─────────────────────────────────────────────
+let map, isSquad=false, drawing=false;
+let pts=[], markers=[], polyline=null;
+let territories=[], layers={}, nextId=1;
+let toastTimer=null;
+
+// ── Boot ──────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  if (typeof L === "undefined") {
+    document.getElementById("dbg").textContent =
+      "❌ Leaflet failed to load. Make sure you're using: npx serve . (not file://)";
+    return;
+  }
+
+  map = L.map("map", {zoomControl:true}).setView(C.center, C.zoom);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution:'© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+    maxZoom:19
+  }).addTo(map);
+
+  map.on("click", onMapClick);
+
+  // Landmark pins
+  C.landmarks.forEach(lm =>
+    L.circleMarker([lm.lat,lm.lng],{radius:4,color:"#555",fillColor:"#888",fillOpacity:.7,weight:1})
+     .bindTooltip(lm.name,{permanent:false,direction:"top"})
+     .addTo(map)
+  );
+
+  // Hide debug bar once tiles start loading
+  map.once("moveend", () => document.getElementById("dbg").classList.add("hidden"));
+  setTimeout(() => document.getElementById("dbg").classList.add("hidden"), 3000);
+});
+
+// ── Squad ─────────────────────────────────────────────
+function toggleSquad(){
+  isSquad = !isSquad;
+  const btn = document.getElementById("squad-btn");
+  btn.textContent = isSquad ? "Squad ON · 2.2×" : "Solo mode";
+  btn.classList.toggle("on", isSquad);
+}
+
+// ── Drawing ───────────────────────────────────────────
+function startDraw(){
+  drawing=true; pts=[]; markers=[];
+  show("close-btn"); show("cancel-btn"); hide("start-btn");
+  setHint("Click the map to place loop points");
+  toast("Click the map to trace your territory","t-info");
+}
+
+function onMapClick(e){
+  if(!drawing) return;
+  const pt={lat:e.latlng.lat, lng:e.latlng.lng};
+  pts.push(pt);
+
+  markers.push(
+    L.circleMarker([pt.lat,pt.lng],{radius:5,color:C.cDraw,fillColor:C.cDraw,fillOpacity:1,weight:2})
+     .addTo(map)
+  );
+
+  if(polyline) map.removeLayer(polyline);
+  if(pts.length>1){
+    polyline = L.polyline([...pts,pts[0]].map(p=>[p.lat,p.lng]),
+      {color:C.cDraw,weight:2.5,dashArray:"6 4",opacity:.85}).addTo(map);
+  }
+
+  document.getElementById("close-btn").disabled = pts.length < C.minPts;
+  setHint(pts.length < C.minPts
+    ? `${C.minPts - pts.length} more point${pts.length===C.minPts-1?"":"s"} needed`
+    : "Ready — click Close Loop");
+}
+
+function cancelDraw(){
+  if(polyline){map.removeLayer(polyline);polyline=null;}
+  markers.forEach(m=>map.removeLayer(m)); markers=[];
+  drawing=false; pts=[];
+  hide("close-btn"); hide("cancel-btn"); hide("hint"); show("start-btn");
+}
+
+// ── Close loop ────────────────────────────────────────
+async function closeLoop(){
+  if(pts.length < C.minPts) return;
+
+  const result = checkTakeover(pts, isSquad);
+  if(result?.blocked){
+    toast(`🛡 ${result.name} held firm (str ${result.strength}). Walk bigger!`,"t-warn");
+    cancelDraw(); return;
+  }
+
+  const savedPts=[...pts], savedSquad=isSquad, prevName=result?.name||null, overtook=!!result;
+  cancelDraw();
+  document.getElementById("loading").classList.remove("hidden");
+
+  try {
+    const area   = Math.round(calcArea(savedPts));
+    const str    = calcStr(area, savedSquad);
+    const spot   = nearestLandmark(savedPts);
+
+    const lore = await callClaude({area,squad:savedSquad,spot,str,overtook,prevName});
+
+    if(overtook){ removeLayer(result.id); territories=territories.filter(t=>t.id!==result.id); }
+
+    const t = { id:nextId++, pts:savedPts, squad:savedSquad, area, str, spot, lore, ts:Date.now() };
+    territories.push(t);
+    renderTerritory(t);
+
+    document.getElementById("loading").classList.add("hidden");
+    showCard(t);
+    document.getElementById("terr-count").textContent =
+      territories.length ? `${territories.length} territor${territories.length===1?"y":"ies"}` : "";
+
+    toast(overtook ? `⚔️ ${lore.battle||lore.name+" took over!"}` : `${lore.name} is yours!`,
+          overtook ? "t-fight" : "t-ok");
+
+  } catch(err){
+    document.getElementById("loading").classList.add("hidden");
+    toast("Error: "+err.message, "t-err");
+    console.error(err);
+  }
+}
+
+// ── Game logic ────────────────────────────────────────
+function calcArea(p){
+  if(p.length<3) return 0;
+  const R=6371000, rad=d=>d*Math.PI/180;
+  const lat0=p[0].lat;
+  const xs=p.map(q=>rad(q.lng-p[0].lng)*R*Math.cos(rad(lat0)));
+  const ys=p.map(q=>rad(q.lat-lat0)*R);
+  let a=0;
+  for(let i=0;i<xs.length;i++){const j=(i+1)%xs.length;a+=xs[i]*ys[j]-xs[j]*ys[i];}
+  return Math.abs(a)/2;
+}
+
+function calcStr(area, squad){
+  return Math.min(99, Math.round((area/40)*(squad?C.squadMul:C.soloMul)));
+}
+
+function nearestLandmark(p){
+  const clat=p.reduce((s,q)=>s+q.lat,0)/p.length;
+  const clng=p.reduce((s,q)=>s+q.lng,0)/p.length;
+  let best=null,min=Infinity;
+  for(const lm of C.landmarks){
+    const d=Math.hypot(lm.lat-clat,lm.lng-clng);
+    if(d<min){min=d;best=lm;}
+  }
+  return min<0.003?best.name:null;
+}
+
+function cen(p){return{lat:p.reduce((s,q)=>s+q.lat,0)/p.length,lng:p.reduce((s,q)=>s+q.lng,0)/p.length};}
+function radius(a){return Math.sqrt(a/Math.PI)/111000;}
+
+function checkTakeover(newPts, squad){
+  const ns=calcStr(calcArea(newPts),squad);
+  for(const t of territories){
+    const c1=cen(newPts),c2=cen(t.pts);
+    const d=Math.hypot(c1.lat-c2.lat,c1.lng-c2.lng);
+    const r=radius(calcArea(newPts))+radius(t.area);
+    if(d<r*0.65){
+      return ns>t.str ? {...t} : {blocked:true,name:t.lore.name,strength:t.str};
+    }
+  }
+  return null;
+}
+
+// ── Claude API ────────────────────────────────────────
+async function callClaude({area,squad,spot,str,overtook,prevName}){
+  const who = squad ? "A squad of 2 students who shared a session code and walked together"
+                    : "A solo student";
+  const tone= squad ? "energetic, warm, collective, slightly epic"
+                    : "atmospheric, slightly mysterious, solo explorer";
+
+  const prompt=`${who} claimed a walking loop on the UW-Madison campus.
+
+Inputs:
+- area_m2: ${area}
+- strength: ${str}
+- landmark: ${spot||"open campus area"}
+- squad: ${squad}
+- overtook_previous: ${overtook?"yes — previous name was: "+prevName:"no"}
+
+Reply ONLY with valid JSON — no markdown, no extra text:
+{"name":"3-5 word territory name","lore":"One vivid sentence.","energy":"2-3 word energy type","battle":"${overtook?"One dramatic takeover sentence.":""}","reward":"Award title for the ${squad?"squad":"player"}"}
+
+Tone: ${tone}. Every field under 12 words.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "x-api-key": API_KEY,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true",
+    },
+    body:JSON.stringify({
+      model:"claude-sonnet-4-6",
+      max_tokens:350,
+      system:"You are a game world AI for TerraLoop. Respond with valid JSON only. No backticks. No extra text.",
+      messages:[{role:"user",content:prompt}]
+    })
+  });
+
+  if(!res.ok){
+    const e=await res.json().catch(()=>({}));
+    throw new Error(e.error?.message||`Claude API error ${res.status}`);
+  }
+  const d=await res.json();
+  const raw=d.content[0].text.replace(/```json|```/g,"").trim();
+  return JSON.parse(raw);
+}
+
+// ── Render territory on map ───────────────────────────
+function renderTerritory(t){
+  const color=t.squad?C.cSquad:C.cSolo;
+  const poly=L.polygon(t.pts.map(p=>[p.lat,p.lng]),{
+    color,fillColor:color,fillOpacity:C.fillOp,weight:2.5
+  }).addTo(map);
+  poly.on("click",()=>showCard(t));
+
+  const clat=t.pts.reduce((s,p)=>s+p.lat,0)/t.pts.length;
+  const clng=t.pts.reduce((s,p)=>s+p.lng,0)/t.pts.length;
+  const icon=L.divIcon({
+    className:"",
+    html:`<div class="tlabel" style="border-color:${color}">
+            <div class="tl-n">${t.lore.name}</div>
+            <div class="tl-s" style="color:${color}">${t.str}</div>
+          </div>`,
+    iconAnchor:[60,18],iconSize:[120,36]
+  });
+  const lbl=L.marker([clat,clng],{icon}).addTo(map);
+
+  // Pulse on claim
+  let f=0;
+  const iv=setInterval(()=>{
+    poly.setStyle({fillOpacity:f%2?C.fillOp:0.5});
+    if(++f>5){clearInterval(iv);poly.setStyle({fillOpacity:C.fillOp});}
+  },150);
+
+  layers[t.id]={poly,lbl};
+}
+
+function removeLayer(id){
+  if(!layers[id])return;
+  layers[id].poly.setStyle({color:C.cOver,fillColor:C.cOver});
+  setTimeout(()=>{
+    map.removeLayer(layers[id].poly);
+    map.removeLayer(layers[id].lbl);
+    delete layers[id];
+  },600);
+}
+
+// ── Card ──────────────────────────────────────────────
+function showCard(t){
+  const color=t.squad?C.cSquad:C.cSolo;
+  const el=document.getElementById("card");
+  el.innerHTML=`
+    <div style="padding-left:12px;margin-bottom:14px;border-left:4px solid ${color}">
+      <div class="c-type" style="color:${color}">${t.squad?"Squad · 2 walkers":"Solo walker"}</div>
+      <div class="c-name">${t.lore.name}</div>
+      ${t.spot?`<div class="c-spot">${t.spot}</div>`:""}
+    </div>
+    <div class="c-lore">"${t.lore.lore}"</div>
+    <div class="c-energy"><span class="c-dot" style="background:${color}"></span>${t.lore.energy}</div>
+    <div class="c-str-row">
+      <span class="c-str-lbl">Strength</span>
+      <div class="str-bg"><div class="str-fill" style="width:${t.str}%;background:${color}"></div></div>
+      <span class="c-str-n">${t.str}</span>
+    </div>
+    <div class="c-area">${t.area.toLocaleString()} m² claimed</div>
+    <div class="c-reward">${t.lore.reward}</div>
+    <button class="c-close" onclick="closeCard()">Close</button>`;
+  el.classList.remove("hidden");
+  requestAnimationFrame(()=>el.classList.add("open"));
+}
+
+function closeCard(){
+  const el=document.getElementById("card");
+  el.classList.remove("open");
+  setTimeout(()=>el.classList.add("hidden"),350);
+}
+
+// ── Helpers ───────────────────────────────────────────
+function show(id){document.getElementById(id).classList.remove("hidden");}
+function hide(id){document.getElementById(id).classList.add("hidden");}
+
+function setHint(txt){
+  const h=document.getElementById("hint");
+  h.textContent=txt; h.classList.remove("hidden");
+}
+
+function toast(msg,cls="t-info"){
+  const el=document.getElementById("toast");
+  el.textContent=msg;
+  el.className=`${cls} show`;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove("show"),4500);
+}
+</script>
+</body>
+</html>
