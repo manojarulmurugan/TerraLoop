@@ -32,6 +32,13 @@ const Game = (() => {
     return Math.min(99, Math.round((areaM2 / 40) * mul));
   }
 
+  // Live strength accounting for decay since claim time
+  function getCurrentStrength(t) {
+    const hoursElapsed = (Date.now() - t.timestamp) / 3600000;
+    const decayed = t.str - Math.floor(hoursElapsed * CONFIG.DECAY_RATE_PER_HOUR);
+    return Math.max(1, decayed);
+  }
+
   // ── Nearest landmark to polygon centroid ──────────────────
   // SCALE → Google Places API reverse geocode of centroid lat/lng
   function nearestLandmark(pts) {
@@ -74,10 +81,18 @@ const Game = (() => {
   //   { ...t }          → takeover! existing territory replaced
   //   { blocked: true } → overlap but attacker too weak
   function checkTakeover(newPts, squad) {
+    // Patrol check: attacker owns the overlapping territory
+    for (const t of territories) {
+      if (overlaps(newPts, t) && t.owner === (typeof Session !== 'undefined'
+          ? Session.getPhoneId() : null)) {
+        t.timestamp = Date.now();
+        return { patrolled: true, id: t.id, name: t.lore.name };
+      }
+    }
     const newStr = calcStr(calcArea(newPts), squad);
     for (const t of territories) {
       if (overlaps(newPts, t)) {
-        if (newStr > t.str) return { ...t, _action: 'takeover' };
+        if (newStr > getCurrentStrength(t)) return { ...t, _action: 'takeover' };
         else                return { blocked: true, name: t.lore.name, str: t.str };
       }
     }
@@ -103,6 +118,6 @@ const Game = (() => {
 
   function getAll() { return territories; }
 
-  return { calcArea, calcStr, nearestLandmark, checkTakeover, create, remove, getAll };
+  return { calcArea, calcStr, getCurrentStrength, nearestLandmark, checkTakeover, create, remove, getAll };
 
 })();
