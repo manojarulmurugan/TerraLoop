@@ -83,8 +83,7 @@ const Game = (() => {
   function checkTakeover(newPts, squad) {
     // Patrol check: attacker owns the overlapping territory
     for (const t of territories) {
-      if (overlaps(newPts, t) && t.owner === (typeof Session !== 'undefined'
-          ? Session.getPhoneId() : null)) {
+      if (overlaps(newPts, t) && t.owner === CONFIG.PHONE_ID) {
         t.timestamp = Date.now();
         return { patrolled: true, id: t.id, name: t.lore.name };
       }
@@ -101,13 +100,21 @@ const Game = (() => {
 
   // ── Create and store a territory ─────────────────────────
   // SCALE → firebase.database().ref('/territories').push(t);
-  function create({ pts, squad, lore }) {
+  function create({ pts, squad, lore, ownerName }) {
     const area = Math.round(calcArea(pts));
     const str  = calcStr(area, squad);
     const spot = nearestLandmark(pts);
-    const t = { id: nextId++, pts, squad, area, str, spot, lore, ts: Date.now() };
+    const owner = ownerName || CONFIG.PHONE_ID;
+    const t = {
+      id: nextId++, pts, squad, area, str, spot, lore,
+      ts: Date.now(), timestamp: Date.now(), owner, ownerName: ownerName || "You",
+    };
     territories.push(t);
     return t;
+  }
+
+  function getByOwner(ownerId) {
+    return territories.filter(t => t.owner === ownerId);
   }
 
   // ── Remove a territory by id ──────────────────────────────
@@ -116,8 +123,12 @@ const Game = (() => {
     territories = territories.filter(t => t.id !== id);
   }
 
+  function findOverlapping(newPts) {
+    return territories.filter(t => overlaps(newPts, t));
+  }
+
   function getAll() { return territories; }
 
-  return { calcArea, calcStr, getCurrentStrength, nearestLandmark, checkTakeover, create, remove, getAll };
+  return { calcArea, calcStr, getCurrentStrength, nearestLandmark, checkTakeover, findOverlapping, create, remove, getAll, getByOwner, centroid };
 
 })();

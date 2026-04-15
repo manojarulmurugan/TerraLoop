@@ -1,236 +1,367 @@
 // ============================================================
-//  js/map.js — Leaflet map + glue that connects everything.
-//              This file boots the app (DOMContentLoaded).
+//  js/map.js — Leaflet map + user interaction + rendering
+//  Click-to-move, drawing-while-moving, NPC territory rendering
 // ============================================================
 
 const MapCtrl = (() => {
 
   let map;
-  let isSquad  = false;
-  let drawing  = false;
-  let pts      = [];
-  let markers  = [];
-  let polyline = null;
-  let layers   = {};     // territory id → { polygon, label }
-  let teammateLayers = {};
+  let userMarker = null;
+  let btCircle = null;
+  let userPlaced = false;
+  let drawing = false;
+  let drawPts = [];
+  let drawLine = null;
+  let drawDots = [];
+  let squadTrails = [];
+  let simMarkers = {};
+  let territoryLayers = [];
+  let npcTerritoryLayers = [];
 
-  // ── Boot ──────────────────────────────────────────────────
+  let moveAnim = null;
+
+  // ── Init ──────────────────────────────────────────────────
   function init() {
+    if (map) return; // guard against double init
 
-    // Guard: if Leaflet CDN failed to load
-    if (typeof L === "undefined") {
-      document.getElementById("dbg").textContent =
-        "❌ Leaflet did not load. Run: npx serve . — then open localhost:3000";
-      return;
-    }
+    map = L.map('map', {
+      center: CONFIG.MAP_CENTER,
+      zoom: CONFIG.MAP_ZOOM,
+      zoomControl: true,
+      attributionControl: false,
+    });
 
-    map = L.map("map", { zoomControl: true })
-            .setView(CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution : '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
-      maxZoom     : 19,
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
     }).addTo(map);
 
-    // Fade debug bar once tiles start loading
-    map.once("tileloadstart", () => {
-      setTimeout(() => document.getElementById("dbg").classList.add("gone"), 2000);
-    });
-    // Fallback — hide after 4s regardless
-    setTimeout(() => document.getElementById("dbg").classList.add("gone"), 4000);
+    map.on('click', onMapClick);
 
-    // Subtle landmark pins
-    CONFIG.LANDMARKS.forEach(lm =>
-      L.circleMarker([lm.lat, lm.lng], {
-        radius: 4, color: "#555", fillColor: "#888", fillOpacity: 0.7, weight: 1,
-      })
-      .bindTooltip(lm.name, { permanent: false, direction: "top" })
-      .addTo(map)
-    );
-
-    console.log("[TerraLoop] Map ready — UW-Madison loaded.");
-
-    const myCode = 'DEMO';
-    document.getElementById('my-code').textContent = myCode;
+    Simulation.init();
   }
 
-  // ── Squad toggle ──────────────────────────────────────────
-  function toggleSquad() {
-    isSquad = !isSquad;
-    UI.setSquadBtn(isSquad);
-  }
+  // ── Map click handler ─────────────────────────────────────
+  function onMapClick(e) {
+    const { lat, lng } = e.latlng;
 
-  // ── Close loop & claim territory ─────────────────────────
-  async function closeLoop() {
-    if (pts.length < CONFIG.MIN_POINTS) return;
-
-    const result = Game.checkTakeover(pts, isSquad);
-
-    // Blocked — attacker too weak
-    if (result?.blocked) {
-      UI.toast(`🛡 ${result.name} held firm (str ${result.str}). Draw a bigger loop!`, "t-warn");
-      if (polyline) { map.removeLayer(polyline); polyline = null; }
-      markers.forEach(m => map.removeLayer(m));
-      markers = []; pts = []; drawing = false;
-      UI.setDrawState(false, 0);
+    if (!userPlaced) {
+      placeUser(lat, lng);
       return;
     }
 
-    // Snapshot state, clear drawing
-    const savedPts   = [...pts];
-    const savedSquad = isSquad;
-    const prevName   = result?.lore?.name || null;
-    const overtook   = !!result;
-    if (polyline) { map.removeLayer(polyline); polyline = null; }
-    markers.forEach(m => map.removeLayer(m));
-    markers = []; pts = []; drawing = false;
-    UI.setDrawState(false, 0);
+    if (drawing) {
+      addDrawPoint({ lat, lng });
+      moveUser(lat, lng);
+      return;
+    }
 
-    UI.showLoading();
+    moveUser(lat, lng);
+  }
 
-    try {
-      const area = Math.round(Game.calcArea(savedPts));
-      const str  = Game.calcStr(area, savedSquad);
-      const spot = Game.nearestLandmark(savedPts);
+  // ── Place user initially ──────────────────────────────────
+  function placeUser(lat, lng) {
+    userPlaced = true;
 
-      // ── Claude generates lore ────────────────────────────
-      const lore = await Claude.generateTerritory({
-        area, squad: savedSquad, spot, str, overtook, prevName,
-      });
+    const icon = L.divIcon({ className: 'user-marker', iconSize: [20, 20], iconAnchor: [10, 10] });
+    userMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(map);
 
-      // ── Remove old territory if taken over ───────────────
-      if (overtook) {
-        removeLayer(result.id);
-        Game.remove(result.id);
+    btCircle = L.circle([lat, lng], {
+      radius: CONFIG.BLUETOOTH_RANGE * 111000,
+      color: '#f59e0b', fillColor: '#f59e0b',
+      fillOpacity: 0.06, weight: 1, opacity: 0.3,
+      dashArray: '6,4',
+    }).addTo(map);
+
+    Simulation.setUserPos(lat, lng);
+    Simulation.start();
+    updateLocationLabel(lat, lng);
+
+    if (typeof UI !== 'undefined') {
+      UI.addFeedItem('📍 You entered campus!', 'sys');
+    }
+    const bb = document.getElementById('bb-status');
+    if (bb) bb.textContent = 'Click map to move. Complete a challenge to unlock zone claiming.';
+  }
+
+  // ── Smooth move user ──────────────────────────────────────
+  function moveUser(lat, lng) {
+    if (!userMarker) return;
+
+    if (moveAnim) cancelAnimationFrame(moveAnim);
+
+    const start = userMarker.getLatLng();
+    const sLat = start.lat, sLng = start.lng;
+    let progress = 0;
+
+    function step() {
+      progress += CONFIG.MOVE_LERP;
+      if (progress >= 1) progress = 1;
+
+      const cLat = sLat + (lat - sLat) * progress;
+      const cLng = sLng + (lng - sLng) * progress;
+
+      userMarker.setLatLng([cLat, cLng]);
+      btCircle.setLatLng([cLat, cLng]);
+      Simulation.setUserPos(cLat, cLng);
+
+      if (progress < 1) {
+        moveAnim = requestAnimationFrame(step);
+      } else {
+        moveAnim = null;
+        updateLocationLabel(lat, lng);
       }
+    }
+    moveAnim = requestAnimationFrame(step);
+  }
 
-      // ── Save + render ────────────────────────────────────
-      const t = Game.create({ pts: savedPts, squad: savedSquad, lore });
-      renderTerritory(t);
+  function getUserPos() {
+    if (!userMarker) return null;
+    const ll = userMarker.getLatLng();
+    return { lat: ll.lat, lng: ll.lng };
+  }
 
-      UI.hideLoading();
-      UI.showCard(t);
-      UI.setTerrCount(Game.getAll().length);
+  // ── Drawing ───────────────────────────────────────────────
+  function startDraw() {
+    if (!userPlaced) {
+      UI.toast('Click the map to place yourself first!');
+      return;
+    }
+    if (!Simulation.isChallengeUnlocked()) {
+      UI.toast('Complete a challenge first to unlock zone claiming!');
+      return;
+    }
+    drawing = true;
+    drawPts = [];
+    drawDots = [];
+    squadTrails = [];
 
-      UI.toast(
-        overtook
-          ? `⚔️ ${lore.battle || lore.name + " took over!"}`
-          : `${lore.name} is yours!`,
-        overtook ? "t-fight" : "t-ok"
-      );
+    if (drawLine) { map.removeLayer(drawLine); drawLine = null; }
 
-    } catch (err) {
-      UI.hideLoading();
-      UI.toast("Error: " + err.message, "t-err");
-      console.error("[TerraLoop]", err);
+    const pos = getUserPos();
+    if (pos) addDrawPoint(pos);
+
+    document.getElementById('btn-claim').style.display = 'none';
+    document.getElementById('btn-close').style.display = '';
+    document.getElementById('btn-cancel').style.display = '';
+    document.getElementById('btn-patrol').style.display = 'none';
+    document.getElementById('bb-status').textContent = 'Click map to add points. Close the loop when done.';
+  }
+
+  function addDrawPoint(pt) {
+    drawPts.push(pt);
+
+    const dot = L.circleMarker([pt.lat, pt.lng], {
+      radius: 5, color: CONFIG.C_DRAW, fillColor: CONFIG.C_DRAW,
+      fillOpacity: 0.8, weight: 2,
+    }).addTo(map);
+    drawDots.push(dot);
+
+    // Show squad mate trails as visual-only markers (not added to polygon)
+    const squadPts = Simulation.getSquadContribution();
+    squadTrails.forEach(t => map.removeLayer(t));
+    squadTrails = [];
+    squadPts.forEach(sp => {
+      const sDot = L.circleMarker([sp.lat, sp.lng], {
+        radius: 3, color: CONFIG.C_SQUAD, fillColor: CONFIG.C_SQUAD,
+        fillOpacity: 0.5, weight: 1,
+      }).addTo(map);
+      squadTrails.push(sDot);
+    });
+
+    if (drawLine) map.removeLayer(drawLine);
+    if (drawPts.length > 1) {
+      drawLine = L.polyline(drawPts.map(p => [p.lat, p.lng]), {
+        color: CONFIG.C_DRAW, weight: 3, opacity: 0.7, dashArray: '8,6',
+      }).addTo(map);
     }
   }
 
-  // ── Draw a territory polygon on the map ──────────────────
-  function renderTerritory(t) {
-    const color = t.squad ? CONFIG.C_SQUAD : CONFIG.C_SOLO;
+  function cancelDraw() {
+    drawing = false;
+    drawPts = [];
+    drawDots.forEach(d => map.removeLayer(d));
+    drawDots = [];
+    if (drawLine) { map.removeLayer(drawLine); drawLine = null; }
+    squadTrails.forEach(t => map.removeLayer(t));
+    squadTrails = [];
+    resetBottomBar();
+  }
 
-    const polygon = L.polygon(
-      t.pts.map(p => [p.lat, p.lng]),
-      { color, fillColor: color, fillOpacity: CONFIG.FILL_OP, weight: 2.5 }
-    ).addTo(map);
+  async function closeDraw() {
+    if (drawPts.length < CONFIG.MIN_POINTS) {
+      UI.toast(`Need at least ${CONFIG.MIN_POINTS} points!`);
+      return;
+    }
 
-    polygon.on("click", () => UI.showCard(t));
+    drawing = false;
+    const pts = [...drawPts];
 
-    // Centroid label
-    const clat = t.pts.reduce((s, p) => s + p.lat, 0) / t.pts.length;
-    const clng = t.pts.reduce((s, p) => s + p.lng, 0) / t.pts.length;
+    drawDots.forEach(d => map.removeLayer(d));
+    drawDots = [];
+    if (drawLine) { map.removeLayer(drawLine); drawLine = null; }
+    squadTrails.forEach(t => map.removeLayer(t));
+    squadTrails = [];
+    drawPts = [];
 
-    const icon = L.divIcon({
-      className  : "",
-      html       : `<div class="tlabel" style="border-color:${color}">
-                      <div class="tl-n">${t.lore.name}</div>
-                      <div class="tl-s" style="color:${color}">${t.str}</div>
-                    </div>`,
-      iconAnchor : [60, 18],
-      iconSize   : [120, 36],
+    const hasSquad = Simulation.getSquadMembers().length > 0;
+
+    // Find ALL overlapping territories — they all get consumed
+    const eaten = Game.findOverlapping(pts);
+    const eatenNames = eaten.filter(t => t.owner !== CONFIG.PHONE_ID).map(t => t.lore.name);
+    const hadTakeover = eatenNames.length > 0;
+
+    if (typeof UI !== 'undefined') UI.showLoading(true);
+
+    let lore;
+    try {
+      const area = Game.calcArea(pts);
+      const str = Game.calcStr(area, hasSquad);
+      const spot = Game.nearestLandmark(pts);
+      lore = await Claude.generateTerritory({
+        area: Math.round(area), squad: hasSquad, spot, str,
+        overtook: hadTakeover,
+        prevName: eatenNames[0] || null,
+      });
+    } catch {
+      lore = {
+        name: "Unnamed Territory",
+        lore: "A mysterious zone on campus.",
+        energy: "Unknown Energy",
+        battle: "",
+        reward: "Explorer",
+      };
+    }
+
+    // Remove all eaten territories from map and data
+    eaten.forEach(old => {
+      Game.remove(old.id);
+      removeTerritoryLayer(old.id);
     });
 
-    const label = L.marker([clat, clng], { icon }).addTo(map);
+    const t = Game.create({ pts, squad: hasSquad, lore });
+    renderTerritory(t);
 
-    // Pulse animation on claim
-    let f = 0;
-    const iv = setInterval(() => {
-      polygon.setStyle({ fillOpacity: f % 2 ? CONFIG.FILL_OP : 0.5 });
-      if (++f > 5) { clearInterval(iv); polygon.setStyle({ fillOpacity: CONFIG.FILL_OP }); }
-    }, 150);
+    if (typeof UI !== 'undefined') UI.showLoading(false);
 
-    layers[t.id] = { polygon, label };
+    if (hadTakeover) {
+      UI.addFeedItem(`⚔️ Consumed ${eatenNames.join(', ')}!`, 'zone');
+    }
+
+    Simulation.onZoneClaimed(t);
+    resetBottomBar();
   }
 
-  // ── Remove a territory from map (with flash) ─────────────
-  function removeLayer(id) {
-    if (!layers[id]) return;
-    layers[id].polygon.setStyle({ color: CONFIG.C_OVER, fillColor: CONFIG.C_OVER });
-    setTimeout(() => {
-      map.removeLayer(layers[id].polygon);
-      map.removeLayer(layers[id].label);
-      delete layers[id];
-    }, 600);
+  function patrolZone() {
+    if (!userPlaced) return;
+    const pos = getUserPos();
+    if (!pos) return;
+    const small = [
+      { lat: pos.lat + 0.0001, lng: pos.lng + 0.0001 },
+      { lat: pos.lat - 0.0001, lng: pos.lng + 0.0001 },
+      { lat: pos.lat, lng: pos.lng - 0.0001 },
+    ];
+    const result = Game.checkTakeover(small, false);
+    if (result && result.patrolled) {
+      UI.toast(`✅ Patrolled ${result.name}! Strength refreshed.`);
+      UI.addFeedItem(`🔄 Patrolled <b>${result.name}</b>`, 'zone');
+    } else {
+      UI.toast('No zones nearby to patrol.');
+    }
   }
 
-  // ── GPS mode ─────────────────────────────────────────────
-  function startGPS() {
-    drawing = true;
-    pts = [];
-    markers = [];
-    UI.setDrawState(true, 0);
-    UI.toast('GPS active — walk your loop', 't-info');
-    navigator.geolocation.watchPosition(
-      pos => {
-        const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        pts.push(pt);
-        map.setView([pt.lat, pt.lng], map.getZoom());
-        markers.push(
-          L.circleMarker([pt.lat, pt.lng], {
-            radius: 4,
-            color: CONFIG.C_DRAW,
-            fillColor: CONFIG.C_DRAW,
-            fillOpacity: 1,
-            weight: 2,
-          }).addTo(map)
-        );
-        if (polyline) map.removeLayer(polyline);
-        if (pts.length > 1) {
-          polyline = L.polyline(
-            [...pts, pts[0]].map(p => [p.lat, p.lng]),
-            { color: CONFIG.C_DRAW, weight: 2.5, dashArray: '6 4', opacity: 0.85 }
-          ).addTo(map);
+  function resetBottomBar() {
+    document.getElementById('btn-claim').style.display = '';
+    document.getElementById('btn-close').style.display = 'none';
+    document.getElementById('btn-cancel').style.display = 'none';
+    document.getElementById('btn-patrol').style.display = '';
+    document.getElementById('bb-status').textContent = 'Click map to move around campus.';
+  }
+
+  // ── Render territories ────────────────────────────────────
+  function renderTerritory(t) {
+    const color = t.squad ? CONFIG.C_SQUAD : CONFIG.C_SOLO;
+    const poly = L.polygon(t.pts.map(p => [p.lat, p.lng]), {
+      color, fillColor: color, fillOpacity: CONFIG.FILL_OP,
+      weight: 2, dashArray: t.squad ? null : '6,4',
+      bubblingMouseEvents: true,
+    }).addTo(map);
+    poly._tId = t.id;
+
+    poly.bindTooltip(`${t.lore.name} · STR ${t.str}`, { sticky: true, className: 'terr-tip' });
+
+    territoryLayers.push(poly);
+  }
+
+  function renderNPCTerritory(t) {
+    const color = CONFIG.C_NPC;
+    const poly = L.polygon(t.pts.map(p => [p.lat, p.lng]), {
+      color, fillColor: color, fillOpacity: 0.15,
+      weight: 2, dashArray: '4,4',
+      bubblingMouseEvents: true,
+    }).addTo(map);
+    poly._tId = t.id;
+
+    poly.bindTooltip(`${t.lore.name} · ${t.ownerName}`, { sticky: true, className: 'terr-tip' });
+
+    npcTerritoryLayers.push(poly);
+  }
+
+  function removeTerritoryLayer(id) {
+    territoryLayers = territoryLayers.filter(l => {
+      if (l._tId === id) { map.removeLayer(l); return false; }
+      return true;
+    });
+    npcTerritoryLayers = npcTerritoryLayers.filter(l => {
+      if (l._tId === id) { map.removeLayer(l); return false; }
+      return true;
+    });
+  }
+
+  // ── Sim student markers ───────────────────────────────────
+  function updateSimStudents(students, uPos) {
+    students.forEach(s => {
+      const isNear = Math.hypot(s.lat - uPos.lat, s.lng - uPos.lng) < CONFIG.BLUETOOTH_RANGE;
+      const isCon = Simulation.isConnected(s.id);
+
+      if (!simMarkers[s.id]) {
+        const icon = L.divIcon({
+          className: `sim-marker${isNear ? ' nearby' : ''}${isCon ? ' connected' : ''}`,
+          html: `<div style="background:${s.color};width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700">${s.avatar}</div>`,
+          iconSize: [28, 28], iconAnchor: [14, 14],
+        });
+        simMarkers[s.id] = L.marker([s.lat, s.lng], { icon, zIndexOffset: 500 }).addTo(map);
+      } else {
+        simMarkers[s.id].setLatLng([s.lat, s.lng]);
+        const el = simMarkers[s.id].getElement();
+        if (el) {
+          el.classList.toggle('nearby', isNear && !isCon);
+          el.classList.toggle('connected', isCon);
         }
-        UI.setDrawState(true, pts.length);
-        if (pts.length > 20) {
-          const d = Math.hypot(pt.lat - pts[0].lat, pt.lng - pts[0].lng) * 111000;
-          if (d < 15) closeLoop();
-        }
-      },
-      err => UI.toast('GPS error: ' + err.message, 't-err'),
-      { enableHighAccuracy: true, maximumAge: 0 }
-    );
+      }
+    });
   }
 
-  // ── Session start (Firebase wired in Hour 2) ─────────────
-  async function startSession() {
-    document.getElementById('lobby').classList.add('hidden');
-    UI.toast('GPS starting...', 't-info');
-    startGPS();
+  // ── Location label ────────────────────────────────────────
+  function updateLocationLabel(lat, lng) {
+    const lbl = document.getElementById('loclbl');
+    if (!lbl) return;
+    let best = 'Open Campus', minD = Infinity;
+    CONFIG.LANDMARKS.forEach(lm => {
+      const d = Math.hypot(lm.lat - lat, lm.lng - lng);
+      if (d < minD) { minD = d; best = lm.name; }
+    });
+    lbl.textContent = minD < 0.003 ? `Near ${best}` : best;
+    if (typeof UI !== 'undefined') UI.updateLocationLabel(best);
   }
 
-  // Expose functions globally for onclick= attributes in index.html
-  window.toggleSquad   = toggleSquad;
-  window.closeLoop     = closeLoop;
-  window.startSession  = startSession;
-
-  return { init };
+  // ── Expose ────────────────────────────────────────────────
+  return {
+    init, startDraw, closeDraw, cancelDraw, patrolZone,
+    updateSimStudents, renderTerritory, renderNPCTerritory,
+    getUserPos, moveUser,
+  };
 
 })();
 
-// ── Boot when DOM is ready ────────────────────────────────
-window.addEventListener("DOMContentLoaded", () => {
-  MapCtrl.init();
-  UI.setSquadBtn(false);
-});
+// Init is called from UI.hideSplash() after #app becomes visible
+// so Leaflet can calculate tile dimensions correctly.

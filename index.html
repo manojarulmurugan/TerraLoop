@@ -1,59 +1,227 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>TerraLoop — Walk to Own the World</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TerraLoop — Claim Your Campus</title>
 
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-
-  <!-- App styles -->
-  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
-  <!-- Full-screen map -->
-  <div id="map"></div>
+<!-- ═══════════ SPLASH ═══════════ -->
+<div id="splash">
+  <div class="sp-inner">
+    <div class="sp-logo">TERRA<span>LOOP</span></div>
+    <div class="sp-tagline">50,000 students. 0 connections.<br>Walk. Connect. Claim.</div>
+    <button id="sp-go" onclick="UI.hideSplash()">Enter Campus</button>
+    <div class="sp-sub">UW-Madison Simulation</div>
+  </div>
+</div>
 
-  <!-- Red bar disappears once map tiles load -->
-  <div id="dbg">⏳ Loading map… (needs internet + localhost, not file://)</div>
+<!-- ═══════════ APP SHELL ═══════════ -->
+<div id="app" style="display:none">
 
-  <!-- Top bar -->
-  <div id="topbar">
-    <div id="logo">Terra<span>Loop</span></div>
-    <div id="terr-count"></div>
-
-    <button id="squad-btn"  onclick="toggleSquad()">Solo mode</button>
-    <button id="start-btn"  onclick="startDraw()">Start Loop</button>
-    <button id="close-btn"  onclick="closeLoop()" class="hidden" disabled>Close Loop</button>
-    <button id="cancel-btn" onclick="cancelDraw()" class="hidden">Cancel</button>
-    <div    id="hint"       class="hidden"></div>
+  <!-- ── HEADER BAR ── -->
+  <div id="hdr">
+    <div class="hdr-brand">TERRA<span>LOOP</span></div>
+    <div class="hdr-stats">
+      <div class="hs"><span id="h-score">0</span><small>SCORE</small></div>
+      <div class="hs"><span id="h-conns">0</span><small>CONNECTIONS</small></div>
+      <div class="hs"><span id="h-zones">0</span><small>ZONES</small></div>
+    </div>
+    <div class="hdr-bt"><span class="bt-dot"></span> BLUETOOTH ACTIVE</div>
   </div>
 
-  <!-- Territory card (slides in from right) -->
-  <div id="card" class="hidden"></div>
+  <!-- ── MAIN 3-COL ── -->
+  <div id="main">
 
-  <!-- Loading overlay -->
-  <div id="loading" class="hidden">
-    <div class="spin"></div>
-    <div id="load-txt">Claude is naming your territory…</div>
+    <!-- LEFT PANEL -->
+    <div id="lp">
+      <div class="lp-section">
+        <div class="lp-title">YOUR PROFILE</div>
+        <div id="lp-profile">
+          <div class="prof-avatar">YOU</div>
+          <div class="prof-name">Explorer</div>
+          <div class="prof-major">Undeclared</div>
+        </div>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-title">SQUAD <span id="squad-ct">(0)</span></div>
+        <div id="lp-squad" class="lp-list">
+          <div class="lp-empty">No squad members yet</div>
+        </div>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-title">MY ZONES <span id="zone-ct">(0)</span></div>
+        <div id="lp-zones" class="lp-list">
+          <div class="lp-empty">Claim your first territory!</div>
+        </div>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-title">YOUR SCORE</div>
+        <div id="lp-score-big">0</div>
+      </div>
+    </div>
+
+    <!-- CENTER MAP -->
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div id="loclbl">Click the map to enter campus</div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div id="rp">
+      <div class="rp-section">
+        <div class="rp-title">NEARBY STUDENTS</div>
+        <div id="rp-nearby" class="rp-list">
+          <div class="rp-empty">Walk around to discover students</div>
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <div class="rp-title">ACTIVITY FEED</div>
+        <div id="rp-feed" class="rp-list">
+          <div class="fi fi-sys">Simulation starting...</div>
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <div class="rp-title">LEADERBOARD</div>
+        <div id="rp-lb" class="rp-list">
+          <div class="rp-empty">Scores loading...</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- ── BOTTOM BAR ── -->
+  <div id="bb">
+    <button id="btn-claim" class="bb-btn bb-primary" disabled onclick="MapCtrl.startDraw()">CLAIM ZONE</button>
+    <button id="btn-close" class="bb-btn bb-accent" style="display:none" onclick="MapCtrl.closeDraw()">CLOSE LOOP</button>
+    <button id="btn-cancel" class="bb-btn bb-dim" style="display:none" onclick="MapCtrl.cancelDraw()">CANCEL</button>
+    <button id="btn-patrol" class="bb-btn bb-secondary" onclick="MapCtrl.patrolZone()">PATROL</button>
+    <span id="bb-status">Click map to place yourself</span>
   </div>
 
-  <!-- Toast -->
-  <div id="toast" role="status"></div>
+</div><!-- /app -->
 
+<!-- ═══════════ MODALS ═══════════ -->
 
-  <!-- Leaflet JS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Connection request -->
+<div id="m-conn" class="modal-overlay" style="display:none">
+  <div class="modal-card conn-card">
+    <div class="mc-header">NEW CONNECTION</div>
+    <div id="mc-avatar" class="mc-avatar"></div>
+    <div id="mc-name" class="mc-name"></div>
+    <div id="mc-bio" class="mc-bio"></div>
+    <div id="mc-ice" class="mc-ice"></div>
+    <div class="mc-actions">
+      <button class="bb-btn bb-primary" onclick="Simulation.acceptConnection()">CONNECT</button>
+      <button class="bb-btn bb-dim" onclick="Simulation.declineConnection()">LATER</button>
+    </div>
+  </div>
+</div>
 
-  <!-- App — order matters -->
-  <script src="config.js"></script>   <!-- 1. constants + API key  -->
-  <script src="js/game.js"></script>  <!-- 2. territory logic       -->
-  <script src="js/claude.js"></script><!-- 3. Claude API call        -->
-  <script src="js/ui.js"></script>    <!-- 4. cards / toasts / DOM  -->
-  <script src="js/map.js"></script>   <!-- 5. Leaflet + glue (boot) -->
+<!-- Task / Challenge modal -->
+<div id="m-task" class="modal-overlay" style="display:none">
+  <div class="modal-card task-card">
+    <div class="mc-header">SQUAD CHALLENGE</div>
+    <div id="tk-vibe" class="tk-vibe"></div>
+    <div id="tk-spark" class="tk-spark"></div>
+    <div class="tk-section">
+      <div class="tk-label">Ask Each Other:</div>
+      <div id="tk-questions"></div>
+    </div>
+    <div class="tk-section">
+      <div class="tk-label">5-Minute Challenge:</div>
+      <div id="tk-challenge" class="tk-challenge-text"></div>
+    </div>
+    <div class="mc-actions">
+      <button class="bb-btn bb-primary" onclick="UI.showProofModal()">UPLOAD PROOF</button>
+      <button class="bb-btn bb-dim" onclick="UI.closeTaskModal()">DO LATER</button>
+    </div>
+  </div>
+</div>
+
+<!-- Photo proof modal -->
+<div id="m-proof" class="modal-overlay" style="display:none">
+  <div class="modal-card proof-card">
+    <div class="mc-header">UPLOAD PROOF</div>
+    <div id="pf-drop" class="pf-drop" onclick="document.getElementById('pf-input').click()">
+      <div class="pf-icon">📸</div>
+      <div>Click or drag a photo here</div>
+    </div>
+    <input type="file" id="pf-input" accept="image/*" style="display:none" onchange="UI.handleProofUpload(event)" />
+    <img id="pf-preview" class="pf-preview" style="display:none" />
+    <div class="mc-actions">
+      <button id="pf-submit" class="bb-btn bb-primary" disabled onclick="Simulation.submitProof()">SUBMIT PROOF</button>
+      <button class="bb-btn bb-dim" onclick="UI.closeProofModal()">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- Challenge complete celebration -->
+<div id="chf" class="modal-overlay celebrate-overlay" style="display:none">
+  <div class="celebrate-inner">
+    <div class="cel-badge">✅</div>
+    <div class="cel-title">CHALLENGE COMPLETE!</div>
+    <img id="cel-photo" class="cel-photo" />
+    <div id="cel-text" class="cel-text"></div>
+    <button class="bb-btn bb-primary" onclick="UI.closeCelebration()">CLAIM YOUR ZONE!</button>
+  </div>
+</div>
+
+<!-- Squad formed celebration -->
+<div id="m-squad" class="modal-overlay celebrate-overlay" style="display:none">
+  <div class="celebrate-inner">
+    <div class="cel-badge">🤝</div>
+    <div class="cel-title">SQUAD FORMED!</div>
+    <div id="sq-name" class="cel-text"></div>
+    <button class="bb-btn bb-primary" onclick="UI.closeSquadCelebration()">LET'S GO!</button>
+  </div>
+</div>
+
+<!-- Territory claimed modal -->
+<div id="m-zone" class="modal-overlay" style="display:none">
+  <div class="modal-card zone-card">
+    <div class="mc-header">TERRITORY CLAIMED!</div>
+    <div id="zn-emoji" class="zn-emoji">🏰</div>
+    <div id="zn-name" class="zn-name"></div>
+    <div id="zn-lore" class="zn-lore"></div>
+    <div class="zn-stats">
+      <div class="zn-stat"><span id="zn-str">0</span><small>STRENGTH</small></div>
+      <div class="zn-stat"><span id="zn-area">0</span><small>AREA m²</small></div>
+      <div class="zn-stat"><span id="zn-mul">1.0x</span><small>MULTIPLIER</small></div>
+    </div>
+    <div id="zn-reward" class="zn-reward"></div>
+    <button class="bb-btn bb-primary" onclick="UI.closeZoneModal()">NICE!</button>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading" class="modal-overlay" style="display:none">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Claude is naming your territory...</div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- ═══════════ SCRIPTS ═══════════ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js"></script>
+<script src="js/game.js"></script>
+<script src="js/claude.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/simulation.js"></script>
+<script src="js/map.js"></script>
 
 </body>
 </html>
